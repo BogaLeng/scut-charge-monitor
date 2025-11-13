@@ -4,6 +4,7 @@ import smtplib
 import re
 from email.mime.text import MIMEText
 from abc import ABC, abstractmethod
+import requests
 
 # --- 抽象通知基类 ---
 class NotificationChannel(ABC):
@@ -78,6 +79,49 @@ class LogNotifier(NotificationChannel):
         logging.info(f"--- {subject} ---\n{body}\n--------------------")
         return True
 
+# --- Server酱 Turbo 版通知实现 (Webhook) ---
+class ServerTurboNotifier(NotificationChannel):
+    """
+    通过 Server酱 Turbo 版的 Webhook 地址发送通知。
+    需要在 .env 中配置 SERVER_TURBO_WEBHOOK，例如：
+    SERVER_TURBO_WEBHOOK=https://sctapi.ftqq.com/<SCTKEY>.send
+    """
+    def __init__(self):
+        self.webhook_url = os.getenv("SERVER_TURBO_WEBHOOK")
+        if not self.webhook_url:
+            raise ValueError("未配置 SERVER_TURBO_WEBHOOK，无法使用 ServerTurboNotifier。")
+
+    def send(self, subject: str, body: str) -> bool:
+        if not self.webhook_url:
+            logging.error("ServerTurbo Webhook 未配置。")
+            return False
+        logging.info("正在通过 ServerTurbo Webhook 发送告警...")
+        try:
+            resp = requests.post(
+                self.webhook_url,
+                data={"title": subject, "desp": body},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                logging.error(f"ServerTurbo 返回非 200 状态码：{resp.status_code}，响应：{resp.text}")
+                return False
+            # Server酱 Turbo 通常返回形如 {"code":0, "message":"success", ...}
+            try:
+                payload = resp.json()
+                ok = payload.get("code") == 0
+                if ok:
+                    logging.info("ServerTurbo 通知发送成功。")
+                else:
+                    logging.error(f"ServerTurbo 通知发送失败：{payload}")
+                return ok
+            except Exception:
+                # 若非 JSON，则以 200 视作成功
+                logging.info("ServerTurbo 通知发送成功（非 JSON 返回）。")
+                return True
+        except Exception as e:
+            logging.error(f"ServerTurbo 通知发送异常：{e}")
+            return False
+
 # --- 通知管理器 ---
 class NotificationManager:
     """管理通知的发送逻辑和渠道。"""
@@ -95,15 +139,41 @@ class NotificationManager:
         else:
             logging.info("未检测到完整的邮件配置，将仅使用日志进行通知。")
         
+        # 如果配置了 Server酱 Turbo Webhook，则启用该通知渠道
+        if os.getenv("SERVER_TURBO_WEBHOOK"):
+            try:
+                self.channels.append(ServerTurboNotifier())
+                logging.info("检测到 SERVER_TURBO_WEBHOOK，已启用 ServerTurbo 通知渠道。")
+            except Exception as e:
+                logging.warning(f"初始化 ServerTurbo 通知渠道失败，将忽略该渠道。原因：{e}")
+        
         # 始终保留日志通知
         self.channels.append(LogNotifier())
 
     def dispatch_alert_if_needed(self, prediction: dict | None, alert: dict | None):
         """
         根据规则判断是否需要发送告警，并分发给所有已配置的渠道。
+        当 .env 中的调试模式开启时（DEBUG/APP_DEBUG 为真），始终发送完整报告。
         :param prediction: 预测结果字典。
         :param alert: 告警结果字典。
         """
+        # 调试模式：DEBUG/APP_DEBUG 任一为真时生效（1/true/yes/on）
+        def _is_truthy(env_value: str | None) -> bool:
+            return str(env_value or "").strip().lower() in {"1", "true", "yes", "on"}
+        debug_mode = _is_truthy(os.getenv("DEBUG")) or _is_truthy(os.getenv("APP_DEBUG"))
+
+        if debug_mode:
+            is_low_balance = bool(alert and alert.get('is_alert', False))
+            is_urgent_runout = bool(prediction and prediction.get('days_left', float('inf')) < 3)
+            # 调试模式下：无条件发送完整报告；根据是否告警选择模板
+            subject, body = self._format_report(prediction, alert, is_alert=(is_low_balance or is_urgent_runout))
+            for channel in self.channels:
+                try:
+                    channel.send(subject, body)
+                except Exception as e:
+                    logging.error(f"通过渠道 {type(channel).__name__} 发送通知时出错: {e}")
+            return
+
         if not alert:
             logging.info("无告警信息，无需发送通知。")
             return
@@ -141,7 +211,7 @@ class NotificationManager:
 
         if is_alert:
             subject = f"[紧急] 宿舍电量告警 - 剩余 {current_balance:.2f} 度"
-            body_lines = [f"请注意：宿舍电量即将耗尽，请尽快充值！"]
+            body_lines = ["请注意：宿舍电量即将耗尽，请尽快充值！"]
         else:
             subject = f"[信息] 宿舍电量报告 - 剩余 {current_balance:.2f} 度"
             body_lines = ["这是您的例行宿舍电量报告。"]

@@ -5,8 +5,6 @@ import os
 class UsageAnalyzer:
     """负责分析用电数据并进行预测。"""
 
-
-
     @staticmethod
     def predict_runout_date(usage_history: list, current_balance: float):
         """

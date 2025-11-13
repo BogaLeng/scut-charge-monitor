@@ -1,11 +1,11 @@
 # 华南理工大学电费监控与告警脚本
 
 这是一个自动化脚本，旨在帮助华南理工大学的学生监控宿舍的电费情况。
-
+相比[原仓库](https://github.com/c-w-xiaohei/scut-charge-monitor)增添了webhook通知的支持,同时修改模型API为OpenAI格式。
 
 ## 项目结构
 
-项目代码主要位于 `src/` 目录下，结构清晰，各模块职责分明：
+项目代码主要位于 `src/` 目录下：
 
 ```
 scut-charge-monitor/
@@ -17,7 +17,7 @@ scut-charge-monitor/
     ├── login.py        # 🔑 负责处理复杂的登录逻辑，包括验证码识别
     ├── query.py        # 📊 登录成功后，用于查询剩余电量与用电历史
     ├── analysis.py     # 🧠 分析用电数据，预测耗尽日期并检查低电量
-    └── notify.py       # 📧 管理通知发送（目前支持邮件和日志）
+    └── notify.py       # 📧 管理通知发送
 ```
 
 ## 快速上手
