@@ -202,7 +202,7 @@ class ScutChargeMonitor:
             if any(keyword in error_message.lower() for keyword in ["api key", "unauthorized", "authentication", "expired"]):
                 logging.error("检测到LLM API key可能已过期或无效，将发送告警通知。")
                 try:
-                    from notify import NotificationManager
+                    from src.notify import NotificationManager
                     notifier = NotificationManager()
                     subject = "[紧急] LLM API Key 过期或无效"
                     body = f"在尝试识别验证码时，检测到LLM API key可能已过期或无效。\n\n错误信息: {error_message}\n\n请检查并更新 .env 文件中的 LLM_API_KEY 配置。"
