@@ -197,6 +197,23 @@ class ScutChargeMonitor:
             return [response_text]
         except Exception as e:
             logging.error(f"识别验证码时发生严重错误: {e}", exc_info=True)
+            # 检查是否为API key过期或认证错误
+            error_message = str(e)
+            if any(keyword in error_message.lower() for keyword in ["api key", "unauthorized", "authentication", "expired"]):
+                logging.error("检测到LLM API key可能已过期或无效，将发送告警通知。")
+                try:
+                    from notify import NotificationManager
+                    notifier = NotificationManager()
+                    subject = "[紧急] LLM API Key 过期或无效"
+                    body = f"在尝试识别验证码时，检测到LLM API key可能已过期或无效。\n\n错误信息: {error_message}\n\n请检查并更新 .env 文件中的 LLM_API_KEY 配置。"
+                    # 直接调用所有通知渠道发送告警
+                    for channel in notifier.channels:
+                        try:
+                            channel.send(subject, body)
+                        except Exception as notify_error:
+                            logging.error(f"发送告警通知时出错: {notify_error}")
+                except Exception as notify_init_error:
+                    logging.error(f"初始化通知管理器时出错: {notify_init_error}")
             return None
 
     def _perform_auth_redirect(self):
